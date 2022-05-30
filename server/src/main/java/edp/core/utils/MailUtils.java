@@ -20,77 +20,59 @@
 package edp.core.utils;
 
 import com.alibaba.druid.util.StringUtils;
-import com.google.common.base.Stopwatch;
+import com.alibaba.fastjson.JSON;
 import edp.core.exception.ServerException;
 import edp.core.model.MailContent;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-import javax.mail.MessagingException;
-import javax.mail.internet.MimeMessage;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
+import javax.annotation.Resource;
+import java.io.Serializable;
+import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
-import static edp.core.consts.Consts.PATTERN_EMAIL_FORMAT;
 import static edp.davinci.core.common.Constants.EMAIL_DEFAULT_TEMPLATE;
 
 @Component
 @Slf4j
 public class MailUtils {
 
-    @Autowired
-    private JavaMailSender javaMailSender;
-
-    @Autowired
+    @Resource
     private TemplateEngine templateEngine;
+    @Value("${mail.app.key}")
+    private String appKey;
 
-    @Value("${spring.mail.username}")
-    private String mailUsername;
+    @Value("${mail.app.secret}")
+    private String appSecret;
 
-    @Value("${spring.mail.fromAddress:}")
-    private String fromAddress;
-
-    @Value("${spring.mail.nickname}")
-    private String nickName;
+    @Value("${mail.server.url}")
+    private String url;
 
     private static final String MAIL_TEXT_KEY = "text";
     private static final String MAIL_HTML_KEY = "html";
 
 
     public void sendMail(MailContent mailContent, Logger customLogger) throws ServerException {
-        Stopwatch watch = Stopwatch.createStarted();
+
         if (mailContent == null) {
-            if (customLogger != null) {
-                customLogger.error("Email content is null");
-            }
+            log.error("Email content is null");
             throw new ServerException("Email content is null");
-        }
-
-        String from = StringUtils.isEmpty(fromAddress) ? mailUsername : fromAddress;
-
-        String displayName = nickName;
-        if (!StringUtils.isEmpty(mailContent.getFrom())) {
-            Matcher matcher = PATTERN_EMAIL_FORMAT.matcher(mailContent.getFrom());
-            if (!matcher.find()) {
-                if (customLogger != null) {
-                    customLogger.error("Unknown email sending address: {}", mailContent.getFrom());
-                }
-                throw new ServerException("Unknown email sending address: " + mailContent.getFrom());
-            }
-            from = mailContent.getFrom();
-        }
-
-        if (!StringUtils.isEmpty(mailContent.getNickName())) {
-            displayName = mailContent.getNickName();
         }
 
         if (StringUtils.isEmpty(mailContent.getSubject())) {
@@ -107,19 +89,15 @@ public class MailUtils {
             throw new ServerException("Email receiving address cannot be empty");
         }
 
-        boolean multipart = false;
         boolean emptyAttachments = CollectionUtils.isEmpty(mailContent.getAttachments());
         String mailContentTemplate = null;
-        String contentHtml = null;
         Context context = new Context();
         switch (mailContent.getMailContentType()) {
             case TEXT:
                 if (StringUtils.isEmpty(mailContent.getContent()) && emptyAttachments) {
                     throw new ServerException("Email content cannot be empty");
                 }
-                if (!emptyAttachments) {
-                    multipart = true;
-                }
+
                 context.setVariable(MAIL_TEXT_KEY, mailContent.getContent());
                 mailContentTemplate = EMAIL_DEFAULT_TEMPLATE;
                 break;
@@ -127,9 +105,7 @@ public class MailUtils {
                 if (StringUtils.isEmpty(mailContent.getHtmlContent()) && emptyAttachments) {
                     throw new ServerException("Email content cannot be empty");
                 }
-                if (!emptyAttachments) {
-                    multipart = true;
-                }
+
                 context.setVariable(MAIL_HTML_KEY, mailContent.getHtmlContent());
                 mailContentTemplate = EMAIL_DEFAULT_TEMPLATE;
                 break;
@@ -141,67 +117,51 @@ public class MailUtils {
                     mailContent.getTemplateContent().forEach(context::setVariable);
                 }
                 mailContentTemplate = mailContent.getTemplate();
-                multipart = true;
                 break;
         }
 
         try {
-            MimeMessage message = javaMailSender.createMimeMessage();
-            MimeMessageHelper messageHelper = new MimeMessageHelper(message, multipart);
+            String contentHtml = templateEngine.process(mailContentTemplate, context);
+            sendMail(mailContent.getTo(), mailContent.getSubject(), contentHtml);
 
-            messageHelper.setFrom(from, displayName);
-            messageHelper.setSubject(mailContent.getSubject());
-            messageHelper.setTo(mailContent.getTo());
-            if (null != mailContent.getCc() && mailContent.getCc().length > 0) {
-                messageHelper.setCc(mailContent.getCc());
-            }
-            if (null != mailContent.getBcc() && mailContent.getBcc().length > 0) {
-                messageHelper.setBcc(mailContent.getBcc());
-            }
-
-            List<String> imageContentIds = new ArrayList<>();
-
-            if (!emptyAttachments) {
-                mailContent.getAttachments().forEach(attachment -> {
-                    if (attachment.isImage()) {
-                        imageContentIds.add(attachment.getName());
-                    }
-                });
-            }
-
-            if (!CollectionUtils.isEmpty(imageContentIds)) {
-                context.setVariable("images", imageContentIds);
-            }
-
-            contentHtml = templateEngine.process(mailContentTemplate, context);
-            messageHelper.setText(contentHtml, true);
-
-            if (!emptyAttachments) {
-                mailContent.getAttachments().forEach(attachment -> {
-                    try {
-                        if (attachment.isImage()) {
-                            messageHelper.addInline(attachment.getName(), attachment.getFile());
-                        } else {
-                            messageHelper.addAttachment(attachment.getName(), attachment.getFile());
-                        }
-                    } catch (MessagingException e) {
-                        log.warn(e.getMessage());
-                        if (customLogger != null) {
-                            log.warn(e.getMessage());
-                        }
-                    }
-                });
-            }
-
-            javaMailSender.send(message);
-            if (customLogger != null) {
-                customLogger.info("Email sending content:{}, cost:{}", mailContent.toString(), watch.elapsed(TimeUnit.MILLISECONDS));
-            }
         } catch (Exception e) {
             if (customLogger != null) {
                 customLogger.error("Send mail error:{}", e.getMessage());
             }
-             throw new ServerException(e.getMessage());
-        } 
+            throw new ServerException(e.getMessage());
+        }
+    }
+
+    public void sendMail(String[] mailTo, String subject, String mailContent) throws MalformedURLException, NoSuchAlgorithmException, InvalidKeyException {
+        Map<String, String> headerMap = HmacSignUtil.createSignHeader(appKey, appSecret, url, "post");
+
+        try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
+            HttpPost httpPost = new HttpPost(url);
+
+            httpPost.setHeader("Content-Type", "application/json");
+
+            httpPost.setHeader("Date", headerMap.get("Date"));
+            httpPost.setHeader("X-HMAC-ACCESS-KEY", headerMap.get("X-HMAC-ACCESS-KEY"));
+            httpPost.setHeader("X-HMAC-ALGORITHM", headerMap.get("X-HMAC-ALGORITHM"));
+            httpPost.setHeader("X-HMAC-SIGNATURE", headerMap.get("X-HMAC-SIGNATURE"));
+
+            String uuid = UUID.randomUUID().toString();
+            Map<String, Serializable> mail = createMailMap(uuid, mailTo, subject, mailContent, true);
+            httpPost.setEntity(new StringEntity(JSON.toJSONString(mail), ContentType.APPLICATION_JSON));
+            CloseableHttpResponse response = httpclient.execute(httpPost);
+            EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            log.error("exception is ", e);
+        }
+    }
+
+    private Map<String, Serializable> createMailMap(String emailNo, String[] toAddress, String subject, String content, boolean isHtml) {
+        Map<String, Serializable> mail = new HashMap<>();
+        mail.put("emailNo", emailNo);
+        mail.put("toAddress", toAddress);
+        mail.put("subject", subject);
+        mail.put("content", content);
+        mail.put("isHtml", isHtml);
+        return mail;
     }
 }

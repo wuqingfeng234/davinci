@@ -25,6 +25,8 @@ file:
 
 
 spring:
+  profiles:
+    active: dev
   servlet:
     multipart:
       max-request-size: 1024MB
