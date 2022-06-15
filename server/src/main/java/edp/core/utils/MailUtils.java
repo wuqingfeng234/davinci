@@ -40,6 +40,7 @@ import org.springframework.stereotype.Component;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import java.io.File;
 import java.io.IOException;
@@ -52,6 +53,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static edp.davinci.core.common.Constants.EMAIL_DEFAULT_TEMPLATE;
 
@@ -75,7 +77,17 @@ public class MailUtils {
 
     private static final String MAIL_TEXT_KEY = "text";
     private static final String MAIL_HTML_KEY = "html";
-    private OkHttpClient okHttpClient = new OkHttpClient();
+    private OkHttpClient okHttpClient;
+
+    @PostConstruct
+    public void init() {
+        okHttpClient = new OkHttpClient().newBuilder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(60, TimeUnit.SECONDS)
+                .build();
+
+    }
 
     public void sendMail(MailContent mailContent, Logger customLogger) throws ServerException {
 
@@ -134,7 +146,7 @@ public class MailUtils {
             if (emptyAttachments) {
                 sendTextMail(mailContent.getTo(), mailContent.getSubject(), contentHtml);
             } else {
-                sendFileMail(mailContent.getTo(), mailContent.getSubject(), mailContent.getContent(), mailContent.getAttachments());
+                sendFileMail(mailContent.getTo(), mailContent.getSubject(), mailContent.getHtmlContent(), mailContent.getAttachments());
             }
         } catch (Exception e) {
             if (customLogger != null) {
@@ -175,6 +187,7 @@ public class MailUtils {
         MultipartBody multipartBody = createMultipartBody(uuid, mailTo, subject, mailContent, true, attachments);
 
         Request request = new Request.Builder()
+             
                 .url(fileUrl)
                 .addHeader("Content-Type", "multipart/form-data")
                 .addHeader("Date", headerMap.get("Date"))
@@ -196,8 +209,8 @@ public class MailUtils {
                 .setType(MediaType.parse("multipart/form-data"))
                 .addFormDataPart("emailNo", emailNo)
                 .addFormDataPart("subject", subject)
-                .addFormDataPart("content", "mailContent")
-                .addFormDataPart("isHtml", "false");
+                .addFormDataPart("content", content)
+                .addFormDataPart("isHtml", "true");
         for (String address : toAddress) {
             builder.addFormDataPart("toAddress", address);
         }
