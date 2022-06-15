@@ -22,8 +22,10 @@ package edp.core.utils;
 import com.alibaba.druid.util.StringUtils;
 import com.alibaba.fastjson.JSON;
 import edp.core.exception.ServerException;
+import edp.core.model.MailAttachment;
 import edp.core.model.MailContent;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.*;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.ContentType;
@@ -33,17 +35,21 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
 import javax.annotation.Resource;
+import java.io.File;
+import java.io.IOException;
 import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -61,12 +67,15 @@ public class MailUtils {
     @Value("${mail.app.secret}")
     private String appSecret;
 
-    @Value("${mail.server.url}")
-    private String url;
+    @Value("${mail.server.text.url}")
+    private String textUrl;
+
+    @Value("${mail.server.file.url}")
+    private String fileUrl;
 
     private static final String MAIL_TEXT_KEY = "text";
     private static final String MAIL_HTML_KEY = "html";
-
+    private OkHttpClient okHttpClient = new OkHttpClient();
 
     public void sendMail(MailContent mailContent, Logger customLogger) throws ServerException {
 
@@ -122,21 +131,25 @@ public class MailUtils {
 
         try {
             String contentHtml = templateEngine.process(mailContentTemplate, context);
-            sendMail(mailContent.getTo(), mailContent.getSubject(), contentHtml);
-
+            if (emptyAttachments) {
+                sendTextMail(mailContent.getTo(), mailContent.getSubject(), contentHtml);
+            } else {
+                sendFileMail(mailContent.getTo(), mailContent.getSubject(), mailContent.getContent(), mailContent.getAttachments());
+            }
         } catch (Exception e) {
             if (customLogger != null) {
                 customLogger.error("Send mail error:{}", e.getMessage());
             }
+            e.printStackTrace();
             throw new ServerException(e.getMessage());
         }
     }
 
-    public void sendMail(String[] mailTo, String subject, String mailContent) throws MalformedURLException, NoSuchAlgorithmException, InvalidKeyException {
-        Map<String, String> headerMap = HmacSignUtil.createSignHeader(appKey, appSecret, url, "post");
+    private void sendTextMail(String[] mailTo, String subject, String mailContent) throws MalformedURLException, NoSuchAlgorithmException, InvalidKeyException {
+        Map<String, String> headerMap = HmacSignUtil.createSignHeader(appKey, appSecret, textUrl, "post");
 
         try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
-            HttpPost httpPost = new HttpPost(url);
+            HttpPost httpPost = new HttpPost(textUrl);
 
             httpPost.setHeader("Content-Type", "application/json");
 
@@ -146,7 +159,7 @@ public class MailUtils {
             httpPost.setHeader("X-HMAC-SIGNATURE", headerMap.get("X-HMAC-SIGNATURE"));
 
             String uuid = UUID.randomUUID().toString();
-            Map<String, Serializable> mail = createMailMap(uuid, mailTo, subject, mailContent, true);
+            Map<String, Serializable> mail = createTextMailMap(uuid, mailTo, subject, mailContent, true);
             httpPost.setEntity(new StringEntity(JSON.toJSONString(mail), ContentType.APPLICATION_JSON));
             CloseableHttpResponse response = httpclient.execute(httpPost);
             EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
@@ -155,7 +168,44 @@ public class MailUtils {
         }
     }
 
-    private Map<String, Serializable> createMailMap(String emailNo, String[] toAddress, String subject, String content, boolean isHtml) {
+    private void sendFileMail(String[] mailTo, String subject, String mailContent, List<MailAttachment> attachments) throws IOException, NoSuchAlgorithmException, InvalidKeyException {
+        Map<String, String> headerMap = HmacSignUtil.createSignHeader(appKey, appSecret, fileUrl, "post");
+        String uuid = UUID.randomUUID().toString();
+
+        MultipartBody multipartBody = createMultipartBody(uuid, mailTo, subject, mailContent, true, attachments);
+
+        Request request = new Request.Builder()
+                .url(fileUrl)
+                .addHeader("Content-Type", "multipart/form-data")
+                .addHeader("Date", headerMap.get("Date"))
+                .addHeader("X-HMAC-ACCESS-KEY", headerMap.get("X-HMAC-ACCESS-KEY"))
+                .addHeader("X-HMAC-ALGORITHM", headerMap.get("X-HMAC-ALGORITHM"))
+                .addHeader("Content-Type", "multipart/form-data")
+                .addHeader("X-HMAC-SIGNATURE", headerMap.get("X-HMAC-SIGNATURE"))
+                .post(multipartBody)
+                .build();
+
+        Response response = okHttpClient.newCall(request).execute();
+        ResponseBody body = response.body();
+        log.info("email send result is {} ", body.string());
+    }
+
+
+    private MultipartBody createMultipartBody(String emailNo, String[] toAddress, String subject, String content, boolean isHtml, List<MailAttachment> attachments) {
+        MultipartBody.Builder builder = new MultipartBody.Builder()
+                .setType(MediaType.parse("multipart/form-data"))
+                .addFormDataPart("emailNo", emailNo)
+                .addFormDataPart("subject", subject)
+                .addFormDataPart("content", "mailContent")
+                .addFormDataPart("isHtml", "false");
+        for (String address : toAddress) {
+            builder.addFormDataPart("toAddress", address);
+        }
+        builder.addFormDataPart("fileList", "cap.png", RequestBody.create(MediaType.parse("image/png"), new File("/home/wuqf/Pictures/result.png")));
+        return builder.build();
+    }
+
+    private Map<String, Serializable> createTextMailMap(String emailNo, String[] toAddress, String subject, String content, boolean isHtml) {
         Map<String, Serializable> mail = new HashMap<>();
         mail.put("emailNo", emailNo);
         mail.put("toAddress", toAddress);
