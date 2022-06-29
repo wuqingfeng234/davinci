@@ -17,7 +17,7 @@
 
 server:
   protocol: http
-  address: 127.0.0.1
+  address: 0.0.0.0
   port: 8080
 
   servlet:
@@ -75,7 +75,7 @@ spring:
   ## davinci datasource config
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
-    url: jdbc:mysql://localhost:3306/davinci?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/davinci?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
     username: davinci
     password: davinci
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -177,7 +177,7 @@ spring:
 screenshot:
   default_browser: CHROME
   timeout_second: 600
-  chromedriver_path: $your_chromedriver_path$
+  chromedriver_path: /home/wuqf/workspace/chromedriver
   remote_webdriver_url: $your_remote_webdriver_url$
 
 data-auth-center:
@@ -215,4 +215,7 @@ mail:
     key: ${mail.app.key}
     secret: ${mail.app.secret}
   server:
-    url: ${mail.server.url}
+    file:
+      url: ${mail.server.file.url}
+    text:
+      url: ${mail.server.text.url}

@@ -187,7 +187,7 @@ public class MailUtils {
         MultipartBody multipartBody = createMultipartBody(uuid, mailTo, subject, mailContent, true, attachments);
 
         Request request = new Request.Builder()
-             
+
                 .url(fileUrl)
                 .addHeader("Content-Type", "multipart/form-data")
                 .addHeader("Date", headerMap.get("Date"))
@@ -214,7 +214,13 @@ public class MailUtils {
         for (String address : toAddress) {
             builder.addFormDataPart("toAddress", address);
         }
-        builder.addFormDataPart("fileList", "cap.png", RequestBody.create(MediaType.parse("image/png"), new File("/home/wuqf/Pictures/result.png")));
+        attachments.forEach(attachment -> {
+            if (attachment.getFile() != null) {
+                builder.addFormDataPart("fileList", attachment.getFile().getName(), RequestBody.create(MediaType.parse("image/png"),attachment.getFile()));
+            }else {
+                log.error("file is null .");
+            }
+        });
         return builder.build();
     }
 
