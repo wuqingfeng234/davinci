@@ -90,7 +90,7 @@ public class MailUtils {
     }
 
     public void sendMail(MailContent mailContent, Logger customLogger) throws ServerException {
-
+        log.info("start to send mail .");
         if (mailContent == null) {
             log.error("Email content is null");
             throw new ServerException("Email content is null");
@@ -216,6 +216,7 @@ public class MailUtils {
         }
         attachments.forEach(attachment -> {
             if (attachment.getFile() != null) {
+                log.info("start to build attachment .");
                 builder.addFormDataPart("fileList", attachment.getFile().getName(), RequestBody.create(MediaType.parse("image/png"),attachment.getFile()));
             }else {
                 log.error("file is null .");

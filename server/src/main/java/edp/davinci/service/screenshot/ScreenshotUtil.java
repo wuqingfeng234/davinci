@@ -61,7 +61,7 @@ import static edp.davinci.service.screenshot.BrowserEnum.valueOf;
 @Component
 public class ScreenshotUtil {
 	
-	private static final Logger scheduleLogger = LoggerFactory.getLogger(LogNameEnum.BUSINESS_SCHEDULE.getName());
+//	private static final Logger log = LoggerFactory.getLogger(LogNameEnum.BUSINESS_SCHEDULE.getName());
 
     @Value("${screenshot.default_browser:PHANTOMJS}")
     private String DEFAULT_BROWSER;
@@ -87,21 +87,21 @@ public class ScreenshotUtil {
     private FileUtils fileUtils;
 
     public void screenshot(long jobId, List<ImageContent> imageContents, Integer imageWidth) {
-    	scheduleLogger.info("Start screenshot for job({})", jobId);
+    	log.info("Start screenshot for job({})", jobId);
         try {
         	int contentsSize = imageContents.size();
             List<Future> futures = new ArrayList<>(contentsSize);
             final AtomicInteger index = new AtomicInteger(1);
             imageContents.forEach(content -> futures.add(executorService.submit(() -> {
-            	scheduleLogger.info("Cronjob({}) thread({}) for screenshot start, type:{}, id:{}, total:{}", jobId, index.get(), content.getDesc(), content.getCId(), contentsSize);
+            	log.info("Cronjob({}) thread({}) for screenshot start, type:{}, id:{}, total:{}", jobId, index.get(), content.getDesc(), content.getCId(), contentsSize);
                 try {
                     File image = doScreenshot(jobId, content.getUrl(), imageWidth);
                     content.setContent(image);
                 } catch (Exception e) {
-                	scheduleLogger.error("Cronjob({}) thread({}) screenshot error", jobId, index.get());
-                	scheduleLogger.error(e.getMessage(), e);
+                	log.error("Cronjob({}) thread({}) screenshot error", jobId, index.get());
+                	log.error(e.getMessage(), e);
                 } finally {
-                    scheduleLogger.info("Cronjob({}) thread({}) for screenshot finish, type:{}, id:{}, total:{}", jobId, index.get(), content.getDesc(), content.getCId(), contentsSize);
+                    log.info("Cronjob({}) thread({}) for screenshot finish, type:{}, id:{}, total:{}", jobId, index.get(), content.getDesc(), content.getCId(), contentsSize);
                     index.incrementAndGet();
                 }
             })));
@@ -111,15 +111,15 @@ public class ScreenshotUtil {
                     future.get();
                 }
             } catch (ExecutionException e) {
-            	scheduleLogger.error(e.getMessage(), e);
+            	log.error(e.getMessage(), e);
             }
 
             imageContents.sort(Comparator.comparing(ImageContent::getOrder));
 
         } catch (InterruptedException e) {
-        	scheduleLogger.error(e.getMessage(), e);
+        	log.error(e.getMessage(), e);
         } finally {
-        	scheduleLogger.info("Cronjob({}) finish screenshot", jobId);
+        	log.info("Cronjob({}) finish screenshot", jobId);
         }
     }
 
@@ -127,7 +127,7 @@ public class ScreenshotUtil {
         WebDriver driver = generateWebDriver(jobId, imageWidth);
 
         driver.get(url);
-        scheduleLogger.info("Cronjob({}) do screenshot url={}, timeout={} start", jobId, url, timeOutSecond);
+        log.info("Cronjob({}) do screenshot url={}, timeout={} start", jobId, url, timeOutSecond);
         try {
             WebDriverWait wait = new WebDriverWait(driver, timeOutSecond);
             ExpectedCondition<WebElement> ConditionOfSign = ExpectedConditions.presenceOfElementLocated(By.id("headlessBrowserRenderSign"));
@@ -165,20 +165,20 @@ public class ScreenshotUtil {
 
         } catch (TimeoutException te) {
             String text = driver.findElements(By.tagName("html")).get(0).getAttribute("innerText");
-            scheduleLogger.info("Cronjob({}) do screenshot url={} text=\n{}", text);
+            log.info("Cronjob({}) do screenshot url={} text=\n{}", text);
             LogEntries logEntries = driver.manage().logs().get(LogType.BROWSER);
             for (LogEntry entry : logEntries) {
-                scheduleLogger.info(entry.getLevel() + " " + entry.getMessage());
+                log.info(entry.getLevel() + " " + entry.getMessage());
             }
-            scheduleLogger.error(te.getMessage(), te);
+            log.error(te.getMessage(), te);
         } catch (InterruptedException e) {
             LogEntries logEntries= driver.manage().logs().get(LogType.BROWSER);
             for (LogEntry entry : logEntries) {
-                scheduleLogger.info(entry.getLevel() + " " + entry.getMessage());
+                log.info(entry.getLevel() + " " + entry.getMessage());
             }
-        	scheduleLogger.error(e.getMessage(), e);
+        	log.error(e.getMessage(), e);
         } finally {
-        	scheduleLogger.info("Cronjob({}) do screenshot url={} finish", jobId, url);
+        	log.info("Cronjob({}) do screenshot url={} finish", jobId, url);
             driver.quit();
         }
 
@@ -191,11 +191,11 @@ public class ScreenshotUtil {
         switch (browserEnum) {
             case CHROME:
                 driver = generateChromeDriver();
-                scheduleLogger.info("Cronjob({}) generating chrome driver({})...", jobId, driver.getClass().toString());
+                log.info("Cronjob({}) generating chrome driver({})...", jobId, driver.getClass().toString());
                 break;
             case PHANTOMJS:
                 driver = generatePhantomJsDriver();
-                scheduleLogger.info("Cronjob({}) generating PhantomJs driver({})...", jobId, PHANTOMJS_PATH);
+                log.info("Cronjob({}) generating PhantomJs driver({})...", jobId, PHANTOMJS_PATH);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown Web browser:" + DEFAULT_BROWSER);
@@ -211,11 +211,11 @@ public class ScreenshotUtil {
 
     private WebDriver generateChromeDriver() throws ExecutionException {
         if (!StringUtils.isEmpty(REMOTE_WEBDRIVER_URL)) {
-            scheduleLogger.info("User remoteWebDriver:{}", REMOTE_WEBDRIVER_URL);
+            log.info("User remoteWebDriver:{}", REMOTE_WEBDRIVER_URL);
             try {
                 return new RemoteWebDriver(new URL(REMOTE_WEBDRIVER_URL), DesiredCapabilities.chrome());
             } catch (MalformedURLException ex) {
-                scheduleLogger.error(ex.toString(), ex);
+                log.error(ex.toString(), ex);
             }
         }
         File file = new File(CHROME_DRIVER_PATH);
