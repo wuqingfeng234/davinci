@@ -171,6 +171,7 @@ public class MailUtils {
             httpPost.setHeader("X-HMAC-SIGNATURE", headerMap.get("X-HMAC-SIGNATURE"));
 
             String uuid = UUID.randomUUID().toString();
+            log.info("email uuid is {}.", uuid);
             Map<String, Serializable> mail = createTextMailMap(uuid, mailTo, subject, mailContent, true);
             httpPost.setEntity(new StringEntity(JSON.toJSONString(mail), ContentType.APPLICATION_JSON));
             CloseableHttpResponse response = httpclient.execute(httpPost);
@@ -183,7 +184,7 @@ public class MailUtils {
     private void sendFileMail(String[] mailTo, String subject, String mailContent, List<MailAttachment> attachments) throws IOException, NoSuchAlgorithmException, InvalidKeyException {
         Map<String, String> headerMap = HmacSignUtil.createSignHeader(appKey, appSecret, fileUrl, "post");
         String uuid = UUID.randomUUID().toString();
-
+        log.info("email uuid is {}.", uuid);
         MultipartBody multipartBody = createMultipartBody(uuid, mailTo, subject, mailContent, true, attachments);
 
         Request request = new Request.Builder()
@@ -217,8 +218,8 @@ public class MailUtils {
         attachments.forEach(attachment -> {
             if (attachment.getFile() != null) {
                 log.info("start to build attachment .");
-                builder.addFormDataPart("fileList", attachment.getFile().getName(), RequestBody.create(MediaType.parse("image/png"),attachment.getFile()));
-            }else {
+                builder.addFormDataPart("fileList", attachment.getFile().getName(), RequestBody.create(MediaType.parse("image/png"), attachment.getFile()));
+            } else {
                 log.error("file is null .");
             }
         });
